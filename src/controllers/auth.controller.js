@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import prisma from "../lib/prisma.js"; 
+import prisma from "../lib/prisma.js";
 
 const cookieOptions = {
   httpOnly: true,
@@ -12,12 +12,42 @@ const cookieOptions = {
 // Register
 export const register = async (req, res) => {
   try {
-    const { email, password, name, academicYear, academicLevel } = req.body; // ✅ Added academic fields
+    const { email, password, name, academicYear, academicLevel, path } =
+      req.body;
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
+    }
+
+    // Resolve path/role to enum (handles "web-dev", "FRONTEND", "Frontend Developer", etc.)
+    const validPaths = [
+      "FRONTEND",
+      "BACKEND",
+      "FULLSTACK",
+      "DEVOPS",
+      "DATA_SCIENCE",
+      "MOBILE",
+      "AI_ML",
+      "WEB_DEV",
+      "DATA_ENGINEER",
+      "CYBERSECURITY",
+    ];
+    const fieldIdMap = {
+      "web-dev": "WEB_DEV",
+      "data-science": "DATA_SCIENCE",
+      "mobile-dev": "MOBILE",
+      cybersecurity: "CYBERSECURITY",
+      "cloud-devops": "DEVOPS",
+      "game-dev": "AI_ML",
+    };
+    let resolvedPath = "NONE";
+    if (path) {
+      const lower = path.toLowerCase();
+      const upper = path.toUpperCase();
+      if (fieldIdMap[lower]) resolvedPath = fieldIdMap[lower];
+      else if (validPaths.includes(upper)) resolvedPath = upper;
     }
 
     // Hash password
@@ -29,14 +59,14 @@ export const register = async (req, res) => {
         email,
         password: hashedPassword,
         name,
-        academicYear, // ✅ e.g "3rd Year BSIT"
-        academicLevel, // ✅ e.g "College Junior"
-        path: "NONE", // ✅ Default path from schema
-        isPremium: false, // ✅ Default from schema
-        currentStage: 1, // ✅ Default from schema
+        academicYear,
+        academicLevel,
+        path: resolvedPath,
+        isPremium: false,
+        currentStage: 1,
         profile: {
           create: {
-            level: 1, // ✅ Default RPG stats
+            level: 1,
             xp: 0,
             hp: 100,
             maxHp: 100,

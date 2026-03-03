@@ -1,6 +1,5 @@
 import express from "express";
 import {
-  generateAndSaveRoadmap,
   getAllRoadmaps,
   getMyRoadmap,
   selectPathAndGenerate,
@@ -9,8 +8,7 @@ import { protect } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-router.post("/select-path", protect, selectPathAndGenerate); // POST /api/roadmap/select-path ✅ Main flow
-router.post("/generate", protect, generateAndSaveRoadmap); // POST /api/roadmap/generate (manual)
+router.post("/select-path", protect, selectPathAndGenerate); // POST /api/roadmap/select-path
 router.get("/my", protect, getMyRoadmap); // GET  /api/roadmap/my
 router.get("/", protect, getAllRoadmaps); // GET  /api/roadmap
 

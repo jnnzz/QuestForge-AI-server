@@ -101,7 +101,11 @@ export const startBossFight = async (req, res) => {
         question: q.question,
         type: q.type,
         choices: q.choices,
-        // ✅ answers hidden
+        // For CODING questions — send the broken code to the student
+        starterCode: q.type === "CODING" ? q.starterCode : null,
+        codeLanguage: q.type === "CODING" ? q.codeLanguage : null,
+        testCases: q.type === "CODING" ? q.testCases : null,
+        // ✅ answer is NEVER sent
       })),
       attempts: userQuest.bossFightAttempts,
     });

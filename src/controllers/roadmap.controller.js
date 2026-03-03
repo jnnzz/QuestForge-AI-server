@@ -2,40 +2,99 @@ import prisma from "../lib/prisma.js";
 import { generateRoadmap } from "../services/ai.service.js";
 
 // ============================================
-// SELECT PATH & GENERATE ROADMAP (Main Flow)
+// MAP: Frontend field.id  OR  plain string  →  Path enum
+// Handles both "web-dev" (from frontend) and "FRONTEND" (direct enum)
+// ============================================
+const resolveToPathEnum = (input) => {
+  if (!input) return null;
+
+  // Frontend field.id → Path enum
+  const fieldIdMap = {
+    "web-dev": "WEB_DEV",
+    "data-science": "DATA_SCIENCE",
+    "mobile-dev": "MOBILE",
+    cybersecurity: "CYBERSECURITY",
+    "cloud-devops": "DEVOPS",
+    "game-dev": "AI_ML", // closest available enum
+  };
+
+  // Direct enum passthrough (already uppercase)
+  const validEnums = [
+    "FRONTEND",
+    "BACKEND",
+    "FULLSTACK",
+    "DEVOPS",
+    "DATA_SCIENCE",
+    "MOBILE",
+    "AI_ML",
+    "WEB_DEV",
+    "DATA_ENGINEER",
+    "CYBERSECURITY",
+    "NONE",
+  ];
+
+  const lower = input.toLowerCase();
+  const upper = input.toUpperCase();
+
+  // 1. Exact frontend field.id match
+  if (fieldIdMap[lower]) return fieldIdMap[lower];
+
+  // 2. Already a valid enum
+  if (validEnums.includes(upper)) return upper;
+
+  // 3. Fuzzy string match (from generateAndSaveRoadmap)
+  if (lower.includes("frontend") || lower.includes("front-end"))
+    return "FRONTEND";
+  if (lower.includes("backend") || lower.includes("back-end")) return "BACKEND";
+  if (lower.includes("fullstack") || lower.includes("full stack"))
+    return "FULLSTACK";
+  if (lower.includes("devops") || lower.includes("cloud")) return "DEVOPS";
+  if (lower.includes("data science") || lower.includes("data scientist"))
+    return "DATA_SCIENCE";
+  if (
+    lower.includes("mobile") ||
+    lower.includes("android") ||
+    lower.includes("ios")
+  )
+    return "MOBILE";
+  if (lower.includes("ai") || lower.includes("machine learning"))
+    return "AI_ML";
+  if (lower.includes("data engineer")) return "DATA_ENGINEER";
+  if (lower.includes("cyber") || lower.includes("security"))
+    return "CYBERSECURITY";
+  if (lower.includes("web")) return "WEB_DEV";
+
+  return null;
+};
+
+// ============================================
+// SELECT PATH & GENERATE ROADMAP (Single unified endpoint)
 // POST /api/roadmap/select-path
-// Body: { path: "FRONTEND" }
+// Accepts any of:
+//   { "path": "web-dev" }            ← frontend field.id
+//   { "path": "FRONTEND" }           ← enum directly
+//   { "itRole": "Frontend Developer" } ← free text string
 // ============================================
 export const selectPathAndGenerate = async (req, res) => {
   try {
-    const { path } = req.body;
+    const { path, itRole } = req.body; // accept both
     const userId = req.user.id;
 
-    if (!path) {
-      return res.status(400).json({ message: "Path is required." });
-    }
+    const input = path || itRole; // use whichever is provided
 
-    // Validate path is a valid enum value
-    const validPaths = [
-      "FRONTEND",
-      "BACKEND",
-      "FULLSTACK",
-      "DEVOPS",
-      "DATA_SCIENCE",
-      "MOBILE",
-      "AI_ML",
-      "WEB_DEV",
-      "DATA_ENGINEER",
-      "CYBERSECURITY",
-    ];
-
-    if (!validPaths.includes(path.toUpperCase())) {
+    if (!input) {
       return res.status(400).json({
-        message: `Invalid path. Choose from: ${validPaths.join(", ")}`,
+        message: "path or itRole is required.",
       });
     }
 
-    const normalizedPath = path.toUpperCase();
+    const normalizedPath = resolveToPathEnum(input);
+
+    if (!normalizedPath || normalizedPath === "NONE") {
+      return res.status(400).json({
+        message: `Invalid value "${input}". Use a field ID (web-dev, data-science, mobile-dev, cybersecurity, cloud-devops, game-dev) or enum (FRONTEND, BACKEND, etc.)`,
+      });
+    }
 
     // 1. Save path to user
     await prisma.user.update({
@@ -80,44 +139,6 @@ export const selectPathAndGenerate = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Failed to select path and generate roadmap",
-      error: error.message,
-    });
-  }
-};
-
-// ============================================
-// GENERATE & SAVE ROADMAP (Manual / Admin)
-// POST /api/roadmap/generate
-// Body: { itRole: "Frontend Developer" }
-// ============================================
-export const generateAndSaveRoadmap = async (req, res) => {
-  try {
-    const { itRole } = req.body;
-    const userId = req.user.id;
-
-    if (!itRole) {
-      return res.status(400).json({ message: "IT role is required" });
-    }
-
-    const mappedPath = mapRoleToPath(itRole);
-
-    // Update user's path
-    await prisma.user.update({
-      where: { id: userId },
-      data: { path: mappedPath, currentStage: 1 },
-    });
-
-    console.log(`Generating roadmap for: ${itRole} → ${mappedPath}`);
-    const roadmapData = await generateRoadmap(itRole);
-    const savedRoadmap = await saveRoadmapToDB(roadmapData, mappedPath);
-
-    return res.status(201).json({
-      message: "Roadmap generated successfully!",
-      roadmap: savedRoadmap,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Failed to generate roadmap",
       error: error.message,
     });
   }
@@ -209,45 +230,6 @@ export const getAllRoadmaps = async (req, res) => {
 };
 
 // ============================================
-// HELPER: Map IT Role string to Path enum
-// ============================================
-const mapRoleToPath = (itRole) => {
-  const role = itRole.toLowerCase();
-  if (
-    role.includes("frontend") ||
-    role.includes("front-end") ||
-    role.includes("web dev")
-  )
-    return "FRONTEND";
-  if (role.includes("backend") || role.includes("back-end")) return "BACKEND";
-  if (
-    role.includes("fullstack") ||
-    role.includes("full-stack") ||
-    role.includes("full stack")
-  )
-    return "FULLSTACK";
-  if (role.includes("devops") || role.includes("dev ops")) return "DEVOPS";
-  if (role.includes("data science") || role.includes("data scientist"))
-    return "DATA_SCIENCE";
-  if (
-    role.includes("mobile") ||
-    role.includes("android") ||
-    role.includes("ios")
-  )
-    return "MOBILE";
-  if (
-    role.includes("ai") ||
-    role.includes("machine learning") ||
-    role.includes("ml")
-  )
-    return "AI_ML";
-  if (role.includes("data engineer")) return "DATA_ENGINEER";
-  if (role.includes("cyber") || role.includes("security"))
-    return "CYBERSECURITY";
-  return "FULLSTACK"; // default
-};
-
-// ============================================
 // SHARED: Save AI-generated roadmap to DB
 // ============================================
 const saveRoadmapToDB = async (roadmapData, path) => {
@@ -314,8 +296,12 @@ const saveRoadmapToDB = async (roadmapData, path) => {
               create: questData.boss.questions.map((q) => ({
                 question: q.question,
                 type: q.type,
-                choices: q.choices,
-                answer: q.answer,
+                choices: q.choices || [],
+                answer: q.answer || [],
+                // Coding-specific fields
+                starterCode: q.starterCode || null,
+                codeLanguage: q.codeLanguage || null,
+                testCases: q.testCases || null,
               })),
             },
           },
